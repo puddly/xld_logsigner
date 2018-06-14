@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import sys
 import copy
@@ -37,29 +37,29 @@ class AlmostSHA256(object):
 
     # Non-standard initial state
     _h = WEIRD_SHA256_IV
-    
-    def __init__(self, m=None):        
+
+    def __init__(self, m=None):
         self._buffer = b''
         self._counter = 0
 
         if m is not None:
             self.update(m)
-        
+
     def _rotate_right(self, x, y):
         return ((x >> y) | (x << (32 - y))) & 0xFFFFFFFF
-                    
+
     def _sha256_process(self, data):
         state = [0] * 64
         state[0:16] = struct.unpack('!16L', data)
-        
+
         for i in range(16, 64):
             s0 = self._rotate_right(state[i - 15], 7) ^ self._rotate_right(state[i - 15], 18) ^ (state[i - 15] >> 3)
             s1 = self._rotate_right(state[i - 2], 17) ^ self._rotate_right(state[i - 2], 19) ^ (state[i - 2] >> 10)
 
             state[i] = (state[i - 16] + s0 + state[i - 7] + s1) & 0xFFFFFFFF
-        
+
         a, b, c, d, e, f, g, h = self._h
-        
+
         for i in range(64):
             s0 = self._rotate_right(a, 2) ^ self._rotate_right(a, 13) ^ self._rotate_right(a, 22)
             maj = (a & b) ^ (a & c) ^ (b & c)
@@ -68,7 +68,7 @@ class AlmostSHA256(object):
             s1 = self._rotate_right(e, 6) ^ self._rotate_right(e, 11) ^ self._rotate_right(e, 25)
             ch = (e & f) ^ ((~e) & g)
             t1 = h + s1 + ch + self._k[i] + state[i]
-            
+
             h = g
             g = f
             f = e
@@ -77,31 +77,31 @@ class AlmostSHA256(object):
             c = b
             b = a
             a = (t1 + t2) & 0xFFFFFFFF
-            
+
         self._h = [(x + y) & 0xFFFFFFFF for x, y in zip(self._h, [a, b, c, d, e, f, g, h])]
-        
+
     def update(self, m):
         self._buffer += m
         self._counter += len(m)
-        
+
         while len(self._buffer) >= 64:
             self._sha256_process(self._buffer[:64])
             self._buffer = self._buffer[64:]
-            
+
     def digest(self):
         mdi = self._counter & 0x3F
-        length = struct.pack('!Q', self._counter<<3)
-        
+        length = struct.pack('!Q', self._counter << 3)
+
         if mdi < 56:
             padlen = 55 - mdi
         else:
             padlen = 119 - mdi
-        
+
         r = copy.deepcopy(self)
         r.update(b'\x80' + (b'\x00' * padlen) + length)
 
         return b''.join([struct.pack('!L', i) for i in r._h[:8]])
-        
+
     def hexdigest(self):
         return self.digest().hex()
 
@@ -109,21 +109,27 @@ class AlmostSHA256(object):
 def bit_concat32(high, low):
     return ((high << 32) & 0xFFFFFFFFFFFFFFFF) | low
 
+
 def byte_swap(bits, n):
     n = n & (1 << bits) - 1
     return int.from_bytes(n.to_bytes(bits // 8, 'little')[::-1], 'little')
 
+
 def LODWORD(n):
     return n & 0x00000000FFFFFFFF
+
 
 def HIDWORD(n):
     return n >> 32
 
+
 def set_LODWORD(n, v):
     return (n & 0xFFFFFFFF00000000) | (v & 0xFFFFFFFF)
 
+
 def set_HIDWORD(n, v):
     return (n & 0x00000000FFFFFFFF) | ((v & 0xFFFFFFFF) << 32)
+
 
 def ROTATE_LEFT32(n, k):
     return ((n << k) & 0xFFFFFFFF) | (n >> (32 - k))
@@ -172,10 +178,10 @@ def scramble(data):
                 p = i
                 i = ROTATE_LEFT32(i, 1)
                 k = (i - p) & 0xFFFFFFFF
-                l = k
+                q = k
                 k = ROTATE_LEFT32(k, 16)
 
-                current = set_HIDWORD(current, HIDWORD(current) ^ (current | l) ^ k)
+                current = set_HIDWORD(current, HIDWORD(current) ^ (current | q) ^ k)
 
                 m = (MAGIC_CONSTANTS[4*j + 3] + HIDWORD(current)) & 0xFFFFFFFF
                 n = m
@@ -249,6 +255,7 @@ def xld_verify(data):
     signature = encode(scrambled_data)
 
     return data, version, old_signature, signature
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verifies and resigns XLD logs')
