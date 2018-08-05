@@ -12,33 +12,20 @@ MAGIC_INITIAL_STATE = 0x48853afc6479b873
 DIGEST_LENGTH = 64 + len('\nVersion=0001')
 
 
-def bit_concat32(high, low):
-    return ((high & 0xFFFFFFFF) << 32) | (low & 0xFFFFFFFF)
-
-def reverse_bytes32(n):
-    as_bytes = n.to_bytes(4, 'little')[::-1]
-    return int.from_bytes(as_bytes, 'little')
-
-def concat_reverse_bytes32(high, low):
-    return bit_concat32(reverse_bytes32(high), reverse_bytes32(low))
-
 def LOW32(n):
     return n & 0x00000000FFFFFFFF
 
 def HIGH32(n):
     return (n & 0xFFFFFFFF00000000) >> 32
 
-def set_LOW32(n, v):
-    return (n & 0xFFFFFFFF00000000) | (v & 0xFFFFFFFF)
-
-def set_HIGH32(n, v):
-    return ((v & 0xFFFFFFFF) << 32) | (n & 0x00000000FFFFFFFF)
-
 def rotate_left(n, k):
     return ((n << k) & 0xFFFFFFFF) | (n >> (32 - k))
 
 def rotate_right(n, k):
     return ((n >> k) | (n << (32 - k))) & 0xFFFFFFFF
+
+def bit_concat32(high, low):
+    return ((high & 0xFFFFFFFF) << 32) | (low & 0xFFFFFFFF)
 
 
 def sha256(data, initial_state):
@@ -103,11 +90,8 @@ def scramble(data):
 
         # If we can read off two 32-bit integers, do it. Otherwise, reuse the last state
         if size >= 8:
-            a = int.from_bytes(data[offset:offset + 4], 'little')
-            b = int.from_bytes(data[offset + 4:offset + 8], 'little')
-
-            X ^= reverse_bytes32(a)
-            Y ^= reverse_bytes32(b)
+            X ^= int.from_bytes(data[offset:offset + 4], 'big')
+            Y ^= int.from_bytes(data[offset + 4:offset + 8], 'big')
 
         # Do some kind of 8-round scramble on the state four times
         for i in range(4):
@@ -134,7 +118,7 @@ def scramble(data):
                 g = (MAGIC_CONSTANTS[4*j + 3] + Y) & 0xFFFFFFFF
                 X ^= (g + 1 + rotate_left(g, 2)) & 0xFFFFFFFF
 
-        output.append(concat_reverse_bytes32(Y, X).to_bytes(8, 'little'))
+        output.append(bit_concat32(X, Y).to_bytes(8, 'big'))
 
     if size > 0:
         last_chunk = output.pop()
