@@ -7,107 +7,13 @@ import argparse
 
 
 LOGCHECKER_MIN_VERSION = '20121027'
-ENCODING_TABLE = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._='
 MAGIC_CONSTANTS = [0x99036946, 0xe99db8e7, 0xe3ae2fa7, 0xa339740, 0xf06eb6a9, 0x92ff9b65, 0x28f7873, 0x9070e316]
 MAGIC_INITIAL_STATE = 0x48853afc6479b873
 DIGEST_LENGTH = 64 + len('\nVersion=0001')
-WEIRD_SHA256_IV = [0x1d95e3a4, 0x06520ef5, 0x3a9cfb75, 0x6104bcae, 0x09ceda82, 0xba55e60b, 0xeaec16c6, 0xeb19af15]
-
-
-class AlmostSHA256(object):
-    __author__ = 'Thomas Dixon'
-    __license__ = 'MIT'
-
-    _k = (0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-          0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-          0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-          0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-          0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-          0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-          0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-          0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-          0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-          0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-          0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-          0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-          0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-          0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-          0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-          0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2)
-
-    # Non-standard initial state
-    _h = WEIRD_SHA256_IV
-    
-    def __init__(self, m=None):        
-        self._buffer = b''
-        self._counter = 0
-
-        if m is not None:
-            self.update(m)
-        
-    def _rotate_right(self, x, y):
-        return ((x >> y) | (x << (32 - y))) & 0xFFFFFFFF
-                    
-    def _sha256_process(self, data):
-        state = [0] * 64
-        state[0:16] = struct.unpack('!16L', data)
-        
-        for i in range(16, 64):
-            s0 = self._rotate_right(state[i - 15], 7) ^ self._rotate_right(state[i - 15], 18) ^ (state[i - 15] >> 3)
-            s1 = self._rotate_right(state[i - 2], 17) ^ self._rotate_right(state[i - 2], 19) ^ (state[i - 2] >> 10)
-
-            state[i] = (state[i - 16] + s0 + state[i - 7] + s1) & 0xFFFFFFFF
-        
-        a, b, c, d, e, f, g, h = self._h
-        
-        for i in range(64):
-            s0 = self._rotate_right(a, 2) ^ self._rotate_right(a, 13) ^ self._rotate_right(a, 22)
-            maj = (a & b) ^ (a & c) ^ (b & c)
-            t2 = s0 + maj
-
-            s1 = self._rotate_right(e, 6) ^ self._rotate_right(e, 11) ^ self._rotate_right(e, 25)
-            ch = (e & f) ^ ((~e) & g)
-            t1 = h + s1 + ch + self._k[i] + state[i]
-            
-            h = g
-            g = f
-            f = e
-            e = (d + t1) & 0xFFFFFFFF
-            d = c
-            c = b
-            b = a
-            a = (t1 + t2) & 0xFFFFFFFF
-            
-        self._h = [(x + y) & 0xFFFFFFFF for x, y in zip(self._h, [a, b, c, d, e, f, g, h])]
-        
-    def update(self, m):
-        self._buffer += m
-        self._counter += len(m)
-        
-        while len(self._buffer) >= 64:
-            self._sha256_process(self._buffer[:64])
-            self._buffer = self._buffer[64:]
-            
-    def digest(self):
-        mdi = self._counter & 0x3F
-        length = struct.pack('!Q', self._counter<<3)
-        
-        if mdi < 56:
-            padlen = 55 - mdi
-        else:
-            padlen = 119 - mdi
-        
-        r = copy.deepcopy(self)
-        r.update(b'\x80' + (b'\x00' * padlen) + length)
-
-        return b''.join([struct.pack('!L', i) for i in r._h[:8]])
-        
-    def hexdigest(self):
-        return self.digest().hex()
 
 
 def bit_concat32(high, low):
-    return ((high << 32) & 0xFFFFFFFFFFFFFFFF) | low
+    return ((high & 0xFFFFFFFF) << 32) | (low & 0xFFFFFFFF)
 
 def byte_swap(bits, n):
     n = n & (1 << bits) - 1
@@ -117,7 +23,7 @@ def LODWORD(n):
     return n & 0x00000000FFFFFFFF
 
 def HIDWORD(n):
-    return n >> 32
+    return (n & 0xFFFFFFFF00000000) >> 32
 
 def set_LODWORD(n, v):
     return (n & 0xFFFFFFFF00000000) | (v & 0xFFFFFFFF)
@@ -125,8 +31,61 @@ def set_LODWORD(n, v):
 def set_HIDWORD(n, v):
     return (n & 0x00000000FFFFFFFF) | ((v & 0xFFFFFFFF) << 32)
 
-def ROTATE_LEFT32(n, k):
+def rotate_left(n, k):
     return ((n << k) & 0xFFFFFFFF) | (n >> (32 - k))
+
+def rotate_right(n, k):
+    return ((n >> k) | (n << (32 - k))) & 0xFFFFFFFF
+
+
+def almost_sha256(data):
+    # Non-standard initial state
+    state = (0x1D95E3A4, 0x06520EF5, 0x3A9CFB75, 0x6104BCAE, 0x09CEDA82, 0xBA55E60B, 0xEAEC16C6, 0xEB19AF15)
+
+    # Standard round constants
+    round_constants = (0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5, 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174, 0xE49B69C1, 0xEFBE4786, 0x0FC19DC6, 0x240CA1CC, 0x2DE92C6F, 0x4A7484AA, 0x5CB0A9DC, 0x76F988DA, 0x983E5152, 0xA831C66D, 0xB00327C8, 0xBF597FC7, 0xC6E00BF3, 0xD5A79147, 0x06CA6351, 0x14292967, 0x27B70A85, 0x2E1B2138, 0x4D2C6DFC, 0x53380D13, 0x650A7354, 0x766A0ABB, 0x81C2C92E, 0x92722C85, 0xA2BFE8A1, 0xA81A664B, 0xC24B8B70, 0xC76C51A3, 0xD192E819, 0xD6990624, 0xF40E3585, 0x106AA070, 0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3, 0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2)
+
+    # Pad the data with a single 1 bit, enough zeroes, and the original message bit length
+    L = 8 * len(data)
+    K = next(i for i in range(0, 512) if (L + 1 + i + 64) % 512 == 0)
+
+    data += b'\x80' + (b'\x00' * ((K - 7) // 8)) + L.to_bytes(8, 'big')
+
+    for start in range(0, len(data), 64):
+        chunk = data[start:start + 64]
+
+        round_state = [0] * 64
+        round_state[0:16] = struct.unpack('!16L', chunk)
+        
+        for i in range(16, 64):
+            s0 = rotate_right(round_state[i - 15], 7) ^ rotate_right(round_state[i - 15], 18) ^ (round_state[i - 15] >> 3)
+            s1 = rotate_right(round_state[i - 2], 17) ^ rotate_right(round_state[i - 2], 19) ^ (round_state[i - 2] >> 10)
+
+            round_state[i] = (round_state[i - 16] + s0 + round_state[i - 7] + s1) & 0xFFFFFFFF
+        
+        a, b, c, d, e, f, g, h = state
+        
+        for i in range(64):
+            s0 = rotate_right(a, 2) ^ rotate_right(a, 13) ^ rotate_right(a, 22)
+            maj = (a & b) ^ (a & c) ^ (b & c)
+            t2 = s0 + maj
+
+            s1 = rotate_right(e, 6) ^ rotate_right(e, 11) ^ rotate_right(e, 25)
+            ch = (e & f) ^ ((~e) & g)
+            t1 = h + s1 + ch + round_constants[i] + round_state[i]
+            
+            h = g
+            g = f
+            f = e
+            e = (d + t1) & 0xFFFFFFFF
+            d = c
+            c = b
+            b = a
+            a = (t1 + t2) & 0xFFFFFFFF
+
+        state = [(x + y) & 0xFFFFFFFF for x, y in zip(state, [a, b, c, d, e, f, g, h])]
+
+    return b''.join([i.to_bytes(4, 'big') for i in state[:8]]).hex()
 
 
 def scramble(data):
@@ -142,8 +101,8 @@ def scramble(data):
 
         if not needs_padding:
             offset = DIGEST_LENGTH - size
-            chunk1 = struct.unpack('<I', data[offset:offset + 4])[0]
-            chunk2 = struct.unpack('<I', data[offset + 4:offset + 8])[0]
+            chunk1 = int.from_bytes(data[offset:offset + 4], 'little')
+            chunk2 = int.from_bytes(data[offset + 4:offset + 8], 'little')
 
             current = previous ^ bit_concat32(byte_swap(32, chunk2), byte_swap(32, chunk1))
         else:
@@ -155,31 +114,31 @@ def scramble(data):
 
                 a = (MAGIC_CONSTANTS[4*j + 0] + HIDWORD(current)) & 0xFFFFFFFF
                 b = a
-                a = ROTATE_LEFT32(a, 1)
+                a = rotate_left(a, 1)
                 c = (b - 1 + a) & 0xFFFFFFFF
                 d = c
-                c = ROTATE_LEFT32(c, 4)
+                c = rotate_left(c, 4)
 
                 current = set_LODWORD(current, d ^ c ^ current)
 
                 e = (MAGIC_CONSTANTS[4*j + 1] + current) & 0xFFFFFFFF
                 f = e
-                e = ROTATE_LEFT32(e, 2)
+                e = rotate_left(e, 2)
                 g = (f + 1 + e) & 0xFFFFFFFF
                 h = g
-                g = ROTATE_LEFT32(g, 8)
+                g = rotate_left(g, 8)
                 i = (MAGIC_CONSTANTS[4*j + 2] + (h ^ g)) & 0xFFFFFFFF
                 p = i
-                i = ROTATE_LEFT32(i, 1)
+                i = rotate_left(i, 1)
                 k = (i - p) & 0xFFFFFFFF
                 l = k
-                k = ROTATE_LEFT32(k, 16)
+                k = rotate_left(k, 16)
 
                 current = set_HIDWORD(current, HIDWORD(current) ^ (current | l) ^ k)
 
                 m = (MAGIC_CONSTANTS[4*j + 3] + HIDWORD(current)) & 0xFFFFFFFF
                 n = m
-                m = ROTATE_LEFT32(m, 2)
+                m = rotate_left(m, 2)
 
                 current = set_LODWORD(current, ((n + 1 + m) ^ current) & 0xFFFFFFFF)
 
@@ -196,32 +155,22 @@ def scramble(data):
             output += remaining
             break
 
-        output += struct.pack('<Q', mod_current)
+        output += mod_current.to_bytes(8, 'little')
 
     return output
 
 
 def encode(data):
-    counter = 0
-    last_digit = 0
-    output = ''
+    import base64
 
-    for c in data:
-        t = 6 - counter
-        digit = c
+    # Non-standard base64 alphabet
+    mapping = str.maketrans(
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._'
+    )
 
-        counter += 2
-        output += ENCODING_TABLE[(digit >> counter) | (last_digit << t) & 0b111111]
-        last_digit = digit
-
-        if counter == 6:
-            counter = 0
-            output += ENCODING_TABLE[last_digit & 0b111111]
-
-    if counter:
-        output += ENCODING_TABLE[(last_digit << (6 - counter)) & 0b111111]
-
-    return output
+    # Output has no padding bytes
+    return base64.b64encode(data).decode('ascii').translate(mapping).rstrip('=')
 
 
 def extract_info(data):
@@ -244,11 +193,12 @@ def extract_info(data):
 def xld_verify(data):
     data, version, old_signature = extract_info(data)
 
-    hashed_data = (AlmostSHA256(data.encode('utf-8')).hexdigest() + '\nVersion=0001').encode('ascii')
+    hashed_data = (almost_sha256(data.encode('utf-8')) + '\nVersion=0001').encode('ascii')
     scrambled_data = scramble(hashed_data)
     signature = encode(scrambled_data)
 
     return data, version, old_signature, signature
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Verifies and resigns XLD logs')
