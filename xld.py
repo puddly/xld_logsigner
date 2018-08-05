@@ -2,30 +2,17 @@
 
 import sys
 import base64
-import struct
 import argparse
 
 
 LOGCHECKER_MIN_VERSION = '20121027'
-MAGIC_CONSTANTS = [0x99036946, 0xe99db8e7, 0xe3ae2fa7, 0xa339740, 0xf06eb6a9, 0x92ff9b65, 0x28f7873, 0x9070e316]
-MAGIC_INITIAL_STATE = 0x48853afc6479b873
-DIGEST_LENGTH = 64 + len('\nVersion=0001')
 
-
-def LOW32(n):
-    return n & 0x00000000FFFFFFFF
-
-def HIGH32(n):
-    return (n & 0xFFFFFFFF00000000) >> 32
 
 def rotate_left(n, k):
     return ((n << k) & 0xFFFFFFFF) | (n >> (32 - k))
 
 def rotate_right(n, k):
-    return ((n >> k) | (n << (32 - k))) & 0xFFFFFFFF
-
-def bit_concat32(high, low):
-    return ((high & 0xFFFFFFFF) << 32) | (low & 0xFFFFFFFF)
+    return rotate_left(n, 32 - k)
 
 
 def sha256(data, initial_state):
@@ -80,49 +67,62 @@ def sha256(data, initial_state):
 
 
 def scramble(data):
-    X = LOW32(MAGIC_INITIAL_STATE)
-    Y = HIGH32(MAGIC_INITIAL_STATE)
+    MAGIC_CONSTANTS = [0x99036946, 0xe99db8e7, 0xe3ae2fa7, 0xa339740, 0xf06eb6a9, 0x92ff9b65, 0x28f7873, 0x9070e316]
+
+    # Split off the unaligned part
+    unpadded_chunk = b''
+
+    if len(data) % 8 != 0:
+        stop = 8 * (len(data) // 8)
+
+        unpadded_chunk = data[stop:]
+        data = data[:stop] + b'\x00' * 8
+
 
     output = []
 
+    # Magic initial state
+    X = 0x6479b873
+    Y = 0x48853afc
+
     for offset in range(0, len(data), 8):
-        size = len(data) - offset
+        # Read off two 32-bit integers
+        X ^= int.from_bytes(data[offset:offset + 4], 'big')
+        Y ^= int.from_bytes(data[offset + 4:offset + 8], 'big')
 
-        # If we can read off two 32-bit integers, do it. Otherwise, reuse the last state
-        if size >= 8:
-            X ^= int.from_bytes(data[offset:offset + 4], 'big')
-            Y ^= int.from_bytes(data[offset + 4:offset + 8], 'big')
-
-        # Do some kind of 8-round scramble on the state four times
-        for i in range(4):
-            for j in range(2):
+        # Scramble them around
+        for _ in range(4):
+            for i in range(2):
                 Y ^= X
 
 
-                a = (MAGIC_CONSTANTS[4*j + 0] + Y) & 0xFFFFFFFF
+                a = (MAGIC_CONSTANTS[4*i + 0] + Y) & 0xFFFFFFFF
                 b = (a - 1 + rotate_left(a, 1)) & 0xFFFFFFFF
 
                 X ^= b ^ rotate_left(b, 4)
 
 
-                c = (MAGIC_CONSTANTS[4*j + 1] + X) & 0xFFFFFFFF
+                c = (MAGIC_CONSTANTS[4*i + 1] + X) & 0xFFFFFFFF
                 d = (c + 1 + rotate_left(c, 2)) & 0xFFFFFFFF
 
-                e = (MAGIC_CONSTANTS[4*j + 2] + (d ^ rotate_left(d, 8))) & 0xFFFFFFFF
+                e = (MAGIC_CONSTANTS[4*i + 2] + (d ^ rotate_left(d, 8))) & 0xFFFFFFFF
                 f = (rotate_left(e, 1) - e) & 0xFFFFFFFF
 
 
                 Y ^= (X | f) ^ rotate_left(f, 16)
 
 
-                g = (MAGIC_CONSTANTS[4*j + 3] + Y) & 0xFFFFFFFF
+                g = (MAGIC_CONSTANTS[4*i + 3] + Y) & 0xFFFFFFFF
                 X ^= (g + 1 + rotate_left(g, 2)) & 0xFFFFFFFF
 
-        output.append(bit_concat32(X, Y).to_bytes(8, 'big'))
+        output.append(X.to_bytes(4, 'big') + Y.to_bytes(4, 'big'))
 
-    if size > 0:
-        last_chunk = output.pop()
-        output.append(bytearray(data[8 * len(output) + i] ^ last_chunk[i] for i in range(size)))
+    # Handle the unaligned last chunk differently
+    if unpadded_chunk:
+        last_scramble = output.pop()
+
+        # Implicitly truncates to the actual length of the data
+        output.append(bytearray(a ^ b for a, b in zip(last_scramble, unpadded_chunk)))
 
     return b''.join(output)
 
