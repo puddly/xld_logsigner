@@ -68,12 +68,12 @@ def scramble(data):
     MAGIC_CONSTANTS = [0x99036946, 0xE99DB8E7, 0xE3AE2FA7, 0xA339740, 0xF06EB6A9, 0x92FF9B65, 0x28F7873, 0x9070E316]
 
     # Split off the unaligned part
-    unpadded_chunk = b''
+    unaligned_chunk = b''
 
     if len(data) % 8 != 0:
         stop = 8 * (len(data) // 8)
 
-        unpadded_chunk = data[stop:]
+        unaligned_chunk = data[stop:]
         data = data[:stop] + b'\x00' * 8
 
 
@@ -116,11 +116,11 @@ def scramble(data):
         output.append(X.to_bytes(4, 'big') + Y.to_bytes(4, 'big'))
 
     # Handle the unaligned last chunk differently
-    if unpadded_chunk:
+    if unaligned_chunk:
         last_scramble = output.pop()
 
         # Implicitly truncates to the actual length of the data
-        output.append(bytearray(a ^ b for a, b in zip(last_scramble, unpadded_chunk)))
+        output.append(bytearray(a ^ b for a, b in zip(last_scramble, unaligned_chunk)))
 
     return b''.join(output)
 
