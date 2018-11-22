@@ -181,8 +181,13 @@ if __name__ == '__main__':
     else:
         handle = open(args.file, 'rb')
 
-    data, version, old_signature, actual_signature = xld_verify(handle.read().decode('utf-8'))
-    handle.close()
+    try:
+        data, version, old_signature, actual_signature = xld_verify(handle.read().decode('utf-8'))
+    except UnicodeDecodeError:
+        print('Not a logfile')
+        sys.exit(1)
+    finally:
+        handle.close()
 
     if args.sign:
         if version <= LOGCHECKER_MIN_VERSION:
